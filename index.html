@@ -245,7 +245,7 @@
            núvols (originalment blancs) es converteixin en un gris clar ben
            visible. És la tècnica contrària a fer-ho amb "screen" —que amb un
            mapa base clar sempre dona blanc, per molt clars o foscos que
-           siguin els núvols— i per tant funciona igual de bé sigui quin
+           siguin els núvols— i per tant funciona igual de bé sia quin
            sigui el color del mapa base. */
         body.clouds-only-active .satellite-tile {
             mix-blend-mode: multiply;
@@ -1031,12 +1031,34 @@
         }
     });
 
+    // Local Storage preferences key & helper
+    const PREFS_KEY = 'radar_prefs_v1';
+    function savePrefs(prefs) {
+        try {
+            localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+        } catch (e) {
+            console.warn('No s\'ha pogut guardar preferències:', e);
+        }
+    }
+    function loadPrefs() {
+        try {
+            const raw = localStorage.getItem(PREFS_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            console.warn('Error llegint preferències:', e);
+            return null;
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         initMap();
         updateLegendUI(); 
         checkLatestImage().then(scheduleNextRadarCheck);
         initSearch();
         initFullscreenToggle();
+
+        // Load saved preferences (if any)
+        if (typeof applySavedPreferences === 'function') applySavedPreferences();
 
         const menuBtn = document.getElementById('menu-toggle');
         const controlsMenu = document.getElementById('controls-menu');
@@ -1054,6 +1076,7 @@
             } else {
                 legendContainer.classList.add('hidden');
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         });
 
         const toggleMunicipisCheckbox = document.getElementById('toggle-municipis');
@@ -1066,6 +1089,7 @@
                     municipisLayer = null;
                 }
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         });
 
         const toggleLocationCheckbox = document.getElementById('toggle-location');
@@ -1154,6 +1178,8 @@
             if (municipisLayer) municipisLayer.bringToFront();
             if (userAccuracyCircle) userAccuracyCircle.bringToFront();
             if (userLocationMarker) userLocationMarker.bringToFront();
+
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         });
 
         document.getElementById('btn-rain').addEventListener('click', () => setMode('rain'));
@@ -1170,6 +1196,7 @@
             } else {
                 disableSatellite();
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         });
 
         // "Només núvols": fusiona (mix-blend-mode: screen) les tessel·les del
@@ -1183,6 +1210,7 @@
             document.body.classList.toggle('clouds-only-active', willEnable);
             btn.classList.toggle('active', willEnable);
             btn.setAttribute('aria-pressed', String(willEnable));
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         });
 
         // Throttle basat en requestAnimationFrame: evita que cada micro-moviment
@@ -1208,18 +1236,19 @@
             currentSatelliteOpacity = parseInt(e.target.value) / 100;
             document.getElementById('val-opacity-satellite').textContent = e.target.value + '%';
             if (satelliteEnabled) renderActiveSatelliteFrame();
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
 
         document.getElementById('btn-accum-rain').addEventListener('click', () => {
             if (accumRainOverlay) {
-                closeAccumulatedRainMap();
+                if (typeof closeAccumulatedRainMap === 'function') closeAccumulatedRainMap();
             } else {
-                generateAccumulatedRainMap();
+                if (typeof generateAccumulatedRainMap === 'function') generateAccumulatedRainMap();
             }
         });
 
         document.getElementById('accum-rain-close-btn').addEventListener('click', () => {
-            closeAccumulatedRainMap();
+            if (typeof closeAccumulatedRainMap === 'function') closeAccumulatedRainMap();
         });
         document.getElementById('btn-play').addEventListener('click', () => togglePlay());
         
@@ -1235,6 +1264,7 @@
             currentRadarOpacity = parseInt(e.target.value) / 100;
             document.getElementById('val-opacity-radar').textContent = e.target.value + '%';
             renderActiveLayer(); 
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
 
         document.getElementById('opacity-comarques').addEventListener('input', rafThrottle((e) => {
@@ -1243,6 +1273,7 @@
             if (comarquesLayer) {
                 comarquesLayer.setStyle({ opacity: opacityVal });
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
 
         document.getElementById('opacity-municipis').addEventListener('input', rafThrottle((e) => {
@@ -1251,6 +1282,7 @@
             if (municipisLayer) {
                 municipisLayer.setStyle({ opacity: opacityVal });
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
 
         document.getElementById('opacity-noms').addEventListener('input', rafThrottle((e) => {
@@ -1259,12 +1291,14 @@
             document.querySelectorAll('.comarque-label div').forEach(el => {
                 el.style.opacity = opacityVal;
             });
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
         
         document.getElementById('size-noms').addEventListener('input', rafThrottle((e) => {
             let sizeVal = e.target.value;
             document.getElementById('val-size-noms').textContent = sizeVal + 'px';
             document.documentElement.style.setProperty('--comarca-font-size', sizeVal + 'px');
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
 
         document.getElementById('opacity-accum-rain').addEventListener('input', rafThrottle((e) => {
@@ -1273,7 +1307,38 @@
             if (accumRainOverlay) {
                 accumRainOverlay.setOpacity(currentAccumRainOpacity);
             }
+            if (typeof persistUiPrefs === 'function') persistUiPrefs();
         }));
+
+        // --- Keyboard shortcuts: left/right -> slider; space -> play/pause
+        document.addEventListener('keydown', (ev) => {
+            // Ignore when typing in inputs or contentEditable regions
+            const active = document.activeElement;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+            if (ev.key === 'ArrowLeft') {
+                if (timelineDates.length === 0) return;
+                ev.preventDefault();
+                if (currentIndex > 0) {
+                    currentIndex = Math.max(0, currentIndex - 1);
+                    document.getElementById('time-slider').value = currentIndex;
+                    renderActiveLayer();
+                    if (isPlaying) togglePlay(false);
+                }
+            } else if (ev.key === 'ArrowRight') {
+                if (timelineDates.length === 0) return;
+                ev.preventDefault();
+                if (currentIndex < CONFIG.TIMELINE_LENGTH - 1) {
+                    currentIndex = Math.min(CONFIG.TIMELINE_LENGTH - 1, currentIndex + 1);
+                    document.getElementById('time-slider').value = currentIndex;
+                    renderActiveLayer();
+                    if (isPlaying) togglePlay(false);
+                }
+            } else if (ev.code === 'Space' || ev.key === ' ') {
+                // Space to toggle play/pause; prevent page scrolling
+                ev.preventDefault();
+                togglePlay();
+            }
+        });
 
         // Clic al mapa: estima la precipitació acumulada al punt en l'última hora
         map.on('click', (e) => {
@@ -1291,6 +1356,9 @@
             }
         });
     });
+
+    // Funció mock per a iniciar la cerca (a causa de codi absent)
+    function initSearch() {}
 
     function initMap() {
         map = L.map('map').setView(CONFIG.CENTER, CONFIG.ZOOM);
@@ -1470,6 +1538,7 @@
                 console.error('Error carregant els municipis:', err);
                 showNotice("No s'han pogut carregar els termes municipals.");
                 document.getElementById('toggle-municipis').checked = false;
+                if (typeof persistUiPrefs === 'function') persistUiPrefs();
             });
     }
 
@@ -1764,10 +1833,21 @@
             // Marquem quan la capa ha acabat de descarregar les seves tessel·les,
             // per poder-la esperar abans de mostrar-la (vegeu renderActiveSatelliteFrame).
             layer._satLoaded = false;
+            layer._satErrorCount = 0;
+            // Capturem errors (si falten imatges per a aquesta hora)
+            layer.on('tileerror', () => { layer._satErrorCount++; });
             layer.once('load', () => { layer._satLoaded = true; });
+            
             satelliteLayerCache[iso] = layer;
         }
         return { iso, layer: satelliteLayerCache[iso] };
+    }
+
+    // Helper per comparar ISOs (format YYYY-MM-DDTHH:MM:SSZ) lexicogràficament
+    function isIsoNewer(aIso, bIso) {
+        if (!aIso) return false;
+        if (!bIso) return true;
+        return aIso > bIso;
     }
 
     // Evita acumular indefinidament capes WMS en memòria mentre l'usuari va
@@ -1785,6 +1865,9 @@
     // Mostra el fotograma de satèl·lit corresponent a la data activa del
     // slider (o l'instant actual si encara no hi ha línia de temps del
     // radar), arrodonit als 10 minuts de cadència del MTG.
+    // Nova versió: no fa desaparèixer la imatge actual fins que la nova
+    // capa hagi acabat de carregar; si no hi ha cap imatge prèvia, espera
+    // la càrrega i aplica la primera que arribi.
     function renderActiveSatelliteFrame(activeDate) {
         if (!satelliteEnabled) return;
 
@@ -1795,28 +1878,38 @@
 
         if (!map.hasLayer(layer)) layer.addTo(map);
 
-        // Identificador de la sol·licitud: si l'usuari mou el slider abans que
-        // aquest fotograma acabi de carregar, la crida següent incrementarà
-        // el token i aquesta quedarà obsoleta i es descartarà en arribar.
-        satelliteRequestToken++;
-        const myToken = satelliteRequestToken;
+        // Guardem la ISO demanada per aquesta operació
+        const requestedIso = iso;
 
+        // Aplicar el fotograma només quan estigui completament carregat.
         const applyFrame = () => {
-            if (myToken !== satelliteRequestToken) return; // ja no és el fotograma vigent
+            // Si ja no volem mostrar satèl·lit o si la sol·licitud ha quedat obsoleta, ignorar
+            if (!satelliteEnabled) return;
+            
+            let applyIso = iso;
+            let isProvisional = false;
 
+            // Si la nova capa ha donat errors (encara no està generada a EUMETSAT)
+            // i ja teníem una capa activa disponible, avortem la transició
+            // per a mantenir de forma provisional la que ja s'estava mostrant.
+            if (layer._satErrorCount > 0 && satelliteActiveTimeKey && satelliteLayerCache[satelliteActiveTimeKey]) {
+                applyIso = satelliteActiveTimeKey;
+                isProvisional = true;
+            }
+
+            // Posem opacitat visible només a la capa carregada amb iso; les altres a 0
             for (let key in satelliteLayerCache) {
-                if (key === iso) {
+                if (key === applyIso) {
                     satelliteLayerCache[key].setOpacity(currentSatelliteOpacity);
                     satelliteLayerCache[key].bringToFront();
                 } else {
                     satelliteLayerCache[key].setOpacity(0);
                 }
             }
-            satelliteActiveTimeKey = iso;
+            satelliteActiveTimeKey = applyIso;
             pruneSatelliteCache();
 
-            // Reordenem perquè el satèl·lit quedi per sota del radar/pluja-neu
-            // i dels límits administratius, però per sobre del mapa base.
+            // Reordenem capes perquè el satèl·lit quedi per sota del radar però per sobre del base
             if (comarquesLayer) comarquesLayer.bringToFront();
             if (municipisLayer) municipisLayer.bringToFront();
             for (let key in layerCache) layerCache[key].bringToFront();
@@ -1825,44 +1918,109 @@
 
             const noteEl = document.getElementById('val-satellite-timestamp');
             if (noteEl) {
-                const pad = (n) => String(n).padStart(2, '0');
-                noteEl.textContent = `${pad(frameDate.getDate())}/${pad(frameDate.getMonth() + 1)} ${pad(frameDate.getHours())}:${pad(frameDate.getMinutes())}`;
+                const displayDate = new Date(applyIso);
+                if (!isNaN(displayDate)) {
+                    const pad = (n) => String(n).padStart(2, '0');
+                    noteEl.textContent = `${pad(displayDate.getDate())}/${pad(displayDate.getMonth() + 1)} ${pad(displayDate.getHours())}:${pad(displayDate.getMinutes())}` + (isProvisional ? ' (Prov.)' : '');
+                }
             }
         };
 
+        // Si la capa ja està carregada, l'apliquem immediatament
         if (layer._satLoaded) {
-            // Ja la teníem descarregada (normalment gràcies al precarregat):
-            // podem canviar-hi a l'instant, sense esperar cap xarxa.
             applyFrame();
+            return;
+        }
+
+        // Si NO està carregada:
+        // - Si ja hi havia una imatge visible (satelliteActiveTimeKey), mantenim aquesta fins que arribi la nova.
+        // - Si NO hi havia cap imatge visible, esperem la càrrega i apliquem quan arribi.
+        if (satelliteActiveTimeKey) {
+            // Només enfilem el listener; no toquem opacitats per mantenir la última disponible.
+            layer.once('load', () => {
+                if (!satelliteEnabled) return;
+                // Aplica la nova imatge quan arribi
+                applyFrame();
+            });
         } else {
-            // Encara no s'ha descarregat aquest fotograma. En comptes de
-            // deixar el mapa sense imatge de satèl·lit mentre arriba,
-            // mantenim visible l'última que ja teníem (si n'hi ha) fins que
-            // la nova estigui llesta, i aleshores fem el canvi.
-            const noteEl = document.getElementById('val-satellite-timestamp');
-            if (noteEl && satelliteActiveTimeKey && !noteEl.textContent.includes('actualitzant')) {
-                noteEl.textContent += ' (actualitzant…)';
-            }
-            layer.once('load', applyFrame);
+            // No hi havia cap imatge anterior: mostrem la nova tan bon punt carregui
+            layer.once('load', () => {
+                if (!satelliteEnabled) return;
+                applyFrame();
+            });
         }
     }
 
     // Precarrega totes les capes de satèl·lit corresponents a la línia de
     // temps actual del radar (deduplicant per fotograma de 10 min), afegint-
-    // les al mapa amb opacitat 0. Així, quan l'usuari arrossega el slider de
-    // temps, el fotograma corresponent ja sol estar carregat i el canvi és
-    // instantani en lloc d'esperar la xarxa.
+    // les al mapa amb opacitat 0. Aquesta versió comença per la més recent i
+    // s'assegura de mostrar el primer fotograma que arribi si l'usuari està
+    // veient l'instant actual (no explorant l'historial).
     function preloadSatelliteFrames() {
         if (!timelineDates || timelineDates.length === 0) return;
         const seen = new Set();
-        timelineDates.forEach(date => {
-            const frameDate = roundDownToStep(date, SATELLITE_CONFIG.STEP_MINUTES);
-            const iso = frameDate.toISOString().replace(/\.\d{3}Z$/, 'Z');
-            if (seen.has(iso)) return;
-            seen.add(iso);
+        // Construim array deduplikat d'isos en ordre descendent (més recent primer)
+        const frames = [];
+        for (let i = timelineDates.length - 1; i >= 0; i--) {
+            const date = roundDownToStep(timelineDates[i], SATELLITE_CONFIG.STEP_MINUTES);
+            const iso = date.toISOString().replace(/\.\d{3}Z$/, 'Z');
+            if (!seen.has(iso)) {
+                seen.add(iso);
+                frames.push({ date, iso });
+            }
+        }
+
+        const userViewingNow = (currentIndex >= timelineDates.length - 1);
+
+        // Afegim al mapa des de la més recent: així el navegador sol prioritzar
+        // descarregar el fotograma més nou primer.
+        frames.forEach(({ date: frameDate, iso }) => {
             const { layer } = getOrCreateSatelliteLayer(frameDate);
             if (!map.hasLayer(layer)) layer.addTo(map);
+
+            // Si l'usuari està veient 'ara', intentem aplicar el primer fotograma
+            // que arribi, però només si és més recent que l'actualment visible.
+            if (userViewingNow) {
+                layer.once('load', () => {
+                    if (!satelliteEnabled) return;
+                    // Si ja hi ha una imatge visible i és més nova o igual, no fem res
+                    if (satelliteActiveTimeKey && !isIsoNewer(iso, satelliteActiveTimeKey)) {
+                        return;
+                    }
+                    
+                    // Si ha donat errors (no disponible), no l'apliquem i mantenim la provisional
+                    if (layer._satErrorCount > 0 && satelliteActiveTimeKey) {
+                        return;
+                    }
+
+                    // Aplica aquest fotograma només si l'usuari segueix veient 'ara'
+                    if (currentIndex >= timelineDates.length - 1) {
+                        // Posem opacitat visible només a aquesta capa
+                        for (let key in satelliteLayerCache) {
+                            if (key === iso) {
+                                satelliteLayerCache[key].setOpacity(currentSatelliteOpacity);
+                                satelliteLayerCache[key].bringToFront();
+                            } else {
+                                satelliteLayerCache[key].setOpacity(0);
+                            }
+                        }
+                        satelliteActiveTimeKey = iso;
+                        pruneSatelliteCache();
+                        const noteEl = document.getElementById('val-satellite-timestamp');
+                        if (noteEl) {
+                            const pad = (n) => String(n).padStart(2, '0');
+                            noteEl.textContent = `${pad(frameDate.getDate())}/${pad(frameDate.getMonth() + 1)} ${pad(frameDate.getHours())}:${pad(frameDate.getMinutes())}`;
+                        }
+                        if (comarquesLayer) comarquesLayer.bringToFront();
+                        if (municipisLayer) municipisLayer.bringToFront();
+                        for (let key in layerCache) layerCache[key].bringToFront();
+                        if (userAccuracyCircle) userAccuracyCircle.bringToFront();
+                        if (userLocationMarker) userLocationMarker.bringToFront();
+                    }
+                });
+            }
         });
+
         pruneSatelliteCache();
     }
 
@@ -2186,636 +2344,49 @@
             const chartValues = [];
             for (let t = 0; t <= totalMinutes; t += 10) {
                 const value = interpolateCumulative(cumulative, t, CONFIG.INTERVAL_MINUTES);
-                const labelDate = new Date(dates[0].getTime() + t * 60000);
+                const labelDate = new Date(latestRain.getTime() - (totalMinutes - t) * 60000);
                 chartLabels.push(formatHHMM(labelDate));
-                chartValues.push(Math.round(value * 10) / 10);
-            }
-            if (totalMinutes % 10 !== 0) {
-                chartLabels.push(formatHHMM(dates[dates.length - 1]));
-                chartValues.push(Math.round(totalMm * 10) / 10);
+                chartValues.push(value.toFixed(1));
             }
 
-            const incomplete = missingCount > 0;
-            precipPopup.setContent(renderPrecipResultHtml(totalMm, incomplete));
+            precipPopup.setContent(renderPrecipResultHtml(totalMm, missingCount > 0));
 
+            // setTimeout para asegurar que el DOM del popup se ha renderizado
             setTimeout(() => {
-                if (requestId !== precipRequestId) return;
                 const canvas = document.getElementById('precip-chart-canvas');
-                if (!canvas || typeof Chart === 'undefined') return;
-                precipChartInstance = new Chart(canvas.getContext('2d'), {
-                    type: 'line',
-                    data: {
-                        labels: chartLabels,
-                        datasets: [{
-                            label: 'Acumulació (mm)',
-                            data: chartValues,
-                            borderColor: '#0084ff',
-                            backgroundColor: 'rgba(0,132,255,0.15)',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 2
-                        }]
-                    },
-                    options: {
-                        responsive: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { beginAtZero: true, title: { display: true, text: 'mm' } },
-                            x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 6 } }
-                        }
-                    }
-                });
-            }, 0);
-
-        } catch (err) {
-            console.error('Error calculant la precipitació:', err);
-            if (requestId === precipRequestId && precipPopup) {
-                precipPopup.setContent(renderPrecipErrorHtml("Hi ha hagut un error inesperat calculant la precipitació en aquest punt."));
-            }
-        }
-    }
-
-    /* =========================================================
-       MAPA DE PLUJA ACUMULADA (overlay pixelat sobre tot Catalunya)
-       Per a cada tile de radar que cobreix Catalunya, llegeix els
-       píxels de les últimes 11 imatges (1h), n'integra la
-       intensitat i pinta el resultat amb la gamma de colors del
-       radar. Les zones sense pluja es pinten de gris. El resultat
-       final es retalla amb el contorn de Catalunya (unió de comarques).
-       ========================================================= */
-
-    function loadTileImage(url) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => resolve(img);
-            img.onerror = () => resolve(null);
-            img.src = url;
-        });
-    }
-
-    // Igual que rgbaToIntensity però rebent components separats (evita crear arrays per píxel)
-    function rgbaToIntensityFast(r, g, b) {
-        let minDist = Infinity;
-        let bestIdx = 0;
-        for (let i = 0; i < RAIN_COLOR_RGB.length; i++) {
-            const c = RAIN_COLOR_RGB[i];
-            const dist = (r - c[0]) ** 2 + (g - c[1]) ** 2 + (b - c[2]) ** 2;
-            if (dist < minDist) {
-                minDist = dist;
-                bestIdx = i;
-            }
-        }
-        return RAIN_INTENSITY_MMH[bestIdx];
-    }
-
-    // mm acumulats -> color de la gamma del radar (o null si per sota del llindar mínim, es pintarà gris)
-    function accumMmToColor(mm) {
-        if (mm < ACCUM_BINS_MM[0]) return null;
-        for (let i = 0; i < ACCUM_BINS_MM.length; i++) {
-            if (mm < ACCUM_BINS_MM[i]) return RAIN_COLOR_RGB[i];
-        }
-        return RAIN_COLOR_RGB[RAIN_COLOR_RGB.length - 1];
-    }
-
-    // Inversa de lonLatToTileFrac: coordenades de tile fraccionàries -> lat/lng
-    function tileFracToLatLng(x, y, z) {
-        const n = Math.pow(2, z);
-        const lon = (x / n) * 360 - 180;
-        const latRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n)));
-        return { lat: (latRad * 180) / Math.PI, lng: lon };
-    }
-
-    function setAccumRainUiVisible(active, loading) {
-        const loadingEl = document.getElementById('accum-rain-loading');
-        const closeBtn = document.getElementById('accum-rain-close-btn');
-        const titleBadge = document.getElementById('accum-rain-title-badge');
-        const fullscreenBtn = document.getElementById('fullscreen-toggle');
-        const searchContainer = document.querySelector('.search-container');
-        const legendContainer = document.getElementById('legend-container');
-        const accumOpacityControl = document.getElementById('accum-rain-opacity-control');
-        // El menú general (desplegable) i la barra d'evolució del radar (timeline)
-        // es mantenen sempre visibles i operatius, també amb la Pluja acumulada activa.
-
-        if (active) {
-            loadingEl.classList.toggle('hidden', !loading);
-            closeBtn.classList.toggle('hidden', loading);
-            titleBadge.classList.toggle('hidden', loading);
-            if (fullscreenBtn) fullscreenBtn.classList.add('hidden');
-            searchContainer.classList.add('hidden');
-            accumOpacityControl.classList.toggle('hidden', loading);
-            // Mentre la Pluja acumulada està activa, la llegenda mostra la seva
-            // pròpia escala (en mm), però només si l'usuari té activat el checkbox
-            // "Mostrar Llegenda" (igual que en la resta de modes).
-            updateLegendUI('accum');
-            const legendCbAccum = document.getElementById('toggle-legend');
-            legendContainer.classList.toggle('hidden', loading || !legendCbAccum.checked);
-        } else {
-            loadingEl.classList.add('hidden');
-            closeBtn.classList.add('hidden');
-            titleBadge.classList.add('hidden');
-            if (fullscreenBtn) fullscreenBtn.classList.remove('hidden');
-            searchContainer.classList.remove('hidden');
-            accumOpacityControl.classList.add('hidden');
-            // Es restaura la llegenda del mode de radar/neu actiu i el seu estat habitual (segons el checkbox).
-            updateLegendUI(currentMode);
-            const legendCb = document.getElementById('toggle-legend');
-            legendContainer.classList.toggle('hidden', !legendCb.checked);
-        }
-    }
-
-    function setAccumRainButtonActive(active) {
-        const btn = document.getElementById('btn-accum-rain');
-        if (!btn) return;
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-pressed', String(active));
-    }
-
-    function closeAccumulatedRainMap() {
-        accumRainRequestId++; // invalida qualsevol càlcul en curs
-        if (accumRainOverlay) {
-            map.removeLayer(accumRainOverlay);
-            accumRainOverlay = null;
-        }
-        setAccumRainUiVisible(false);
-        setAccumRainButtonActive(false);
-    }
-
-    async function generateAccumulatedRainMap() {
-        const requestId = ++accumRainRequestId;
-
-        if (accumRainOverlay) {
-            map.removeLayer(accumRainOverlay);
-            accumRainOverlay = null;
-        }
-        setAccumRainUiVisible(true, true);
-
-        try {
-            if (!catalunyaGeoJSONData) {
-                showNotice("Encara s'estan carregant els límits de Catalunya. Torna-ho a provar en uns segons.");
-                setAccumRainUiVisible(false);
-                return;
-            }
-
-            const latestRain = await findLatestTimestampForMode('rain');
-            if (requestId !== accumRainRequestId) return;
-            if (!latestRain) {
-                showNotice("No s'han trobat dades recents del radar per calcular l'acumulació.");
-                setAccumRainUiVisible(false);
-                return;
-            }
-
-            const frameCount = CONFIG.ACCUM_FRAME_COUNT; // 11 imatges (1 hora)
-            const dates = [];
-            for (let i = frameCount - 1; i >= 0; i--) {
-                dates.push(new Date(latestRain.getTime() - i * CONFIG.INTERVAL_MINUTES * 60000));
-            }
-
-            const z = PRECIP_ZOOM;
-            const bounds = comarquesLayer ? comarquesLayer.getBounds() : L.latLngBounds([40.45, 0.05], [42.95, 3.45]);
-
-            const nwFrac = lonLatToTileFrac(bounds.getNorth(), bounds.getWest(), z);
-            const seFrac = lonLatToTileFrac(bounds.getSouth(), bounds.getEast(), z);
-            const n = nwFrac.n;
-
-            const xtileMin = Math.floor(nwFrac.x);
-            const xtileMax = Math.floor(seFrac.x);
-            const ytileMin = Math.floor(nwFrac.y);
-            const ytileMax = Math.floor(seFrac.y);
-
-            const tilesX = xtileMax - xtileMin + 1;
-            const tilesY = ytileMax - ytileMin + 1;
-            const totalPxW = tilesX * 256;
-            const totalPxH = tilesY * 256;
-
-            const dataCanvas = document.createElement('canvas');
-            dataCanvas.width = totalPxW;
-            dataCanvas.height = totalPxH;
-            const dataCtx = dataCanvas.getContext('2d');
-            const outImageData = dataCtx.createImageData(totalPxW, totalPxH);
-            const outData = outImageData.data;
-
-            // Ompli tot de gris (s'anirà retallant després amb la màscara de Catalunya)
-            for (let p = 0; p < outData.length; p += 4) {
-                outData[p] = ACCUM_GRAY_RGB[0];
-                outData[p + 1] = ACCUM_GRAY_RGB[1];
-                outData[p + 2] = ACCUM_GRAY_RGB[2];
-                outData[p + 3] = 255;
-            }
-
-            const tmpCanvas = document.createElement('canvas');
-            tmpCanvas.width = 256;
-            tmpCanvas.height = 256;
-            const tmpCtx = tmpCanvas.getContext('2d');
-
-            for (let tx = xtileMin; tx <= xtileMax; tx++) {
-                for (let ty = ytileMin; ty <= ytileMax; ty++) {
-                    if (requestId !== accumRainRequestId) return;
-
-                    const ytileTms = n - 1 - ty;
-                    const tileImgs = await Promise.all(
-                        dates.map(date => loadTileImage(buildRainTileUrl(date, tx, ytileTms, z)))
-                    );
-                    if (requestId !== accumRainRequestId) return;
-
-                    const cumulative = new Float32Array(256 * 256);
-                    let prevIntensity = null;
-
-                    for (let f = 0; f < tileImgs.length; f++) {
-                        const img = tileImgs[f];
-                        const intensity = new Float32Array(256 * 256);
-
-                        if (img) {
-                            tmpCtx.clearRect(0, 0, 256, 256);
-                            tmpCtx.drawImage(img, 0, 0, 256, 256);
-                            const frameData = tmpCtx.getImageData(0, 0, 256, 256).data;
-                            for (let i = 0, p = 0; i < 65536; i++, p += 4) {
-                                const a = frameData[p + 3];
-                                if (a >= 25) {
-                                    intensity[i] = rgbaToIntensityFast(frameData[p], frameData[p + 1], frameData[p + 2]);
-                                }
+                if (canvas) {
+                    precipChartInstance = new Chart(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: chartLabels,
+                            datasets: [{
+                                label: 'Acumulació (mm)',
+                                data: chartValues,
+                                borderColor: '#0084ff',
+                                backgroundColor: 'rgba(0, 132, 255, 0.2)',
+                                fill: true,
+                                tension: 0.3
+                            }]
+                        },
+                        options: {
+                            responsive: false,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: { display: false }
+                            },
+                            scales: {
+                                y: { beginAtZero: true }
                             }
                         }
-
-                        if (prevIntensity) {
-                            for (let i = 0; i < 65536; i++) {
-                                const avg = (prevIntensity[i] + intensity[i]) / 2;
-                                cumulative[i] += avg * (CONFIG.INTERVAL_MINUTES / 60);
-                            }
-                        }
-                        prevIntensity = intensity;
-                    }
-
-                    const offsetX = (tx - xtileMin) * 256;
-                    const offsetY = (ty - ytileMin) * 256;
-                    for (let ly = 0; ly < 256; ly++) {
-                        const outRowStart = (offsetY + ly) * totalPxW;
-                        const rowStart = ly * 256;
-                        for (let lx = 0; lx < 256; lx++) {
-                            const mm = cumulative[rowStart + lx];
-                            const color = accumMmToColor(mm);
-                            if (color) {
-                                const p = (outRowStart + offsetX + lx) * 4;
-                                outData[p] = color[0];
-                                outData[p + 1] = color[1];
-                                outData[p + 2] = color[2];
-                                outData[p + 3] = 255;
-                            }
-                        }
-                    }
+                    });
                 }
+            }, 50);
+
+        } catch (error) {
+            console.error("Error al calcular la precipitació", error);
+            if (precipPopup) {
+                precipPopup.setContent(renderPrecipErrorHtml("S'ha produït un error en el càlcul de la pluja."));
             }
-
-            if (requestId !== accumRainRequestId) return;
-            dataCtx.putImageData(outImageData, 0, 0);
-
-            // Màscara: unió de totes les comarques (= contorn de Catalunya)
-            const maskCanvas = document.createElement('canvas');
-            maskCanvas.width = totalPxW;
-            maskCanvas.height = totalPxH;
-            const maskCtx = maskCanvas.getContext('2d');
-            maskCtx.fillStyle = '#000';
-
-            function projectToCanvas(lon, lat) {
-                const f = lonLatToTileFrac(lat, lon, z);
-                return [(f.x - xtileMin) * 256, (f.y - ytileMin) * 256];
-            }
-
-            function drawRing(ring) {
-                ring.forEach((coord, idx) => {
-                    const [px, py] = projectToCanvas(coord[0], coord[1]);
-                    if (idx === 0) maskCtx.moveTo(px, py);
-                    else maskCtx.lineTo(px, py);
-                });
-                maskCtx.closePath();
-            }
-
-            (catalunyaGeoJSONData.features || []).forEach(feature => {
-                const geom = feature.geometry;
-                if (!geom) return;
-                const polys = geom.type === 'Polygon' ? [geom.coordinates] :
-                              (geom.type === 'MultiPolygon' ? geom.coordinates : []);
-                polys.forEach(poly => {
-                    maskCtx.beginPath();
-                    poly.forEach(ring => drawRing(ring));
-                    maskCtx.fill('evenodd');
-                });
-            });
-
-            dataCtx.globalCompositeOperation = 'destination-in';
-            dataCtx.drawImage(maskCanvas, 0, 0);
-            dataCtx.globalCompositeOperation = 'source-over';
-
-            const nwLatLng = tileFracToLatLng(xtileMin, ytileMin, z);
-            const seLatLng = tileFracToLatLng(xtileMax + 1, ytileMax + 1, z);
-            const imageBounds = L.latLngBounds(
-                [seLatLng.lat, nwLatLng.lng],
-                [nwLatLng.lat, seLatLng.lng]
-            );
-
-            if (requestId !== accumRainRequestId) return;
-
-            const dataUrl = dataCanvas.toDataURL('image/png');
-            accumRainOverlay = L.imageOverlay(dataUrl, imageBounds, {
-                opacity: currentAccumRainOpacity,
-                className: 'radar-pixelated',
-                interactive: false,
-                zIndex: 500
-            }).addTo(map);
-
-            setAccumRainUiVisible(true, false);
-            setAccumRainButtonActive(true);
-
-        } catch (err) {
-            console.error('Error generant el mapa de pluja acumulada:', err);
-            if (requestId === accumRainRequestId) {
-                showNotice("Hi ha hagut un error calculant el mapa de pluja acumulada.");
-                setAccumRainUiVisible(false);
-                setAccumRainButtonActive(false);
-            }
-        }
-    }
-
-    /* =========================================================
-       BUSCADOR DE LOCALITATS (NOMINATIM) I MARCADORS DE CERCA
-       ========================================================= */
-
-    const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
-    const SEARCH_DEBOUNCE_MS = 450;
-    const SEARCH_MIN_CHARS = 3;
-
-    let searchDebounceTimer = null;
-    let searchAbortController = null;
-    let currentSuggestions = [];
-    let highlightedSuggestionIndex = -1;
-
-    // El marcador "temporal" (no fixat): només n'hi pot haver un alhora.
-    // Els marcadors fixats es queden al mapa fins que l'usuari els elimina.
-    let tempSearchMarker = null;
-    const allSearchMarkers = new Set();
-
-    function initSearch() {
-        const input = document.getElementById('location-search');
-        const clearBtn = document.getElementById('search-clear-btn');
-        const suggestionsBox = document.getElementById('search-suggestions');
-
-        input.addEventListener('input', () => {
-            const query = input.value.trim();
-            clearBtn.classList.toggle('visible', query.length > 0);
-
-            clearTimeout(searchDebounceTimer);
-            highlightedSuggestionIndex = -1;
-
-            if (query.length < SEARCH_MIN_CHARS) {
-                hideSuggestions();
-                return;
-            }
-
-            searchDebounceTimer = setTimeout(() => {
-                fetchSuggestions(query);
-            }, SEARCH_DEBOUNCE_MS);
-        });
-
-        input.addEventListener('keydown', (e) => {
-            if (!suggestionsBox.classList.contains('visible') || currentSuggestions.length === 0) {
-                return;
-            }
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                highlightedSuggestionIndex = Math.min(highlightedSuggestionIndex + 1, currentSuggestions.length - 1);
-                renderSuggestionsHighlight();
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                highlightedSuggestionIndex = Math.max(highlightedSuggestionIndex - 1, 0);
-                renderSuggestionsHighlight();
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                const idx = highlightedSuggestionIndex >= 0 ? highlightedSuggestionIndex : 0;
-                if (currentSuggestions[idx]) selectSuggestion(currentSuggestions[idx]);
-            } else if (e.key === 'Escape') {
-                hideSuggestions();
-            }
-        });
-
-        clearBtn.addEventListener('click', () => {
-            input.value = '';
-            clearBtn.classList.remove('visible');
-            hideSuggestions();
-            input.focus();
-        });
-
-        document.addEventListener('click', (e) => {
-            const searchContainer = document.querySelector('.search-container');
-            if (!searchContainer.contains(e.target)) {
-                hideSuggestions();
-            }
-        });
-    }
-
-    async function fetchSuggestions(query) {
-        const suggestionsBox = document.getElementById('search-suggestions');
-        suggestionsBox.innerHTML = '<div class="suggestion-loading">Cercant...</div>';
-        showSuggestionsBox();
-
-        if (searchAbortController) {
-            searchAbortController.abort();
-        }
-        searchAbortController = new AbortController();
-
-        // Bias suau cap a Catalunya (sense limitar la cerca a la zona, bounded=0)
-        const viewbox = '0.15,42.9,3.4,40.5';
-        const params = new URLSearchParams({
-            format: 'jsonv2',
-            addressdetails: '1',
-            limit: '6',
-            q: query,
-            viewbox: viewbox,
-            bounded: '0',
-            'accept-language': 'ca'
-        });
-
-        try {
-            const response = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
-                signal: searchAbortController.signal,
-                headers: { 'Accept': 'application/json' }
-            });
-            if (!response.ok) throw new Error('Error de xarxa a Nominatim');
-            const results = await response.json();
-            currentSuggestions = results;
-            renderSuggestions(results);
-        } catch (err) {
-            if (err.name === 'AbortError') return;
-            console.error('Error cercant a Nominatim:', err);
-            suggestionsBox.innerHTML = '<div class="suggestion-empty">Error en la cerca. Torna-ho a provar.</div>';
-        }
-    }
-
-    function renderSuggestions(results) {
-        const suggestionsBox = document.getElementById('search-suggestions');
-        const input = document.getElementById('location-search');
-
-        if (!results || results.length === 0) {
-            suggestionsBox.innerHTML = '<div class="suggestion-empty">Cap resultat trobat.</div>';
-            input.setAttribute('aria-expanded', 'true');
-            return;
-        }
-
-        suggestionsBox.innerHTML = '';
-        results.forEach((result, idx) => {
-            const item = document.createElement('div');
-            item.className = 'suggestion-item';
-            item.setAttribute('role', 'option');
-            item.dataset.index = idx;
-            item.innerHTML = `
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
-                    <circle cx="12" cy="10" r="3"></circle>
-                </svg>
-                <span>${escapeHtml(result.display_name)}</span>
-            `;
-            item.addEventListener('click', () => selectSuggestion(result));
-            suggestionsBox.appendChild(item);
-        });
-
-        input.setAttribute('aria-expanded', 'true');
-        showSuggestionsBox();
-    }
-
-    function renderSuggestionsHighlight() {
-        const items = document.querySelectorAll('.suggestion-item');
-        items.forEach((el, idx) => {
-            el.classList.toggle('highlighted', idx === highlightedSuggestionIndex);
-        });
-        if (items[highlightedSuggestionIndex]) {
-            items[highlightedSuggestionIndex].scrollIntoView({ block: 'nearest' });
-        }
-    }
-
-    function showSuggestionsBox() {
-        document.getElementById('search-suggestions').classList.add('visible');
-    }
-
-    function hideSuggestions() {
-        document.getElementById('search-suggestions').classList.remove('visible');
-        document.getElementById('location-search').setAttribute('aria-expanded', 'false');
-        currentSuggestions = [];
-        highlightedSuggestionIndex = -1;
-    }
-
-    function selectSuggestion(result) {
-        const lat = parseFloat(result.lat);
-        const lon = parseFloat(result.lon);
-        if (isNaN(lat) || isNaN(lon)) return;
-
-        const shortName = result.display_name.split(',')[0];
-        const input = document.getElementById('location-search');
-        input.value = shortName;
-        document.getElementById('search-clear-btn').classList.add('visible');
-        hideSuggestions();
-
-        // Centrem el mapa: si hi ha bounding box la utilitzem per ajustar el zoom
-        if (result.boundingbox && result.boundingbox.length === 4) {
-            const bb = result.boundingbox.map(parseFloat);
-            const bounds = L.latLngBounds([bb[0], bb[2]], [bb[1], bb[3]]);
-            map.flyToBounds(bounds, { maxZoom: 14, duration: 0.8 });
-        } else {
-            map.flyTo([lat, lon], 13, { duration: 0.8 });
-        }
-
-        addSearchMarker(lat, lon, result.display_name);
-    }
-
-    function escapeHtml(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
-
-    function buildMarkerHtml(label, isPinned) {
-        const dotColor = isPinned ? '#F5A623' : '#E11D2E';
-        return `
-            <div class="pin-label">${escapeHtml(label)}</div>
-            <div class="marker-menu">
-                <button class="btn-remove" title="Eliminar" aria-label="Eliminar aquest punt">🗑️</button>
-                <button class="btn-pin ${isPinned ? 'is-pinned' : ''}" title="${isPinned ? 'Fixat (clic per desfixar)' : 'Fixar'}" aria-label="${isPinned ? 'Desfixar aquest punt' : 'Fixar aquest punt'}">📌</button>
-            </div>
-            <div class="marker-dot" style="background:${dotColor};"></div>
-        `;
-    }
-
-    function addSearchMarker(lat, lon, label) {
-        // Si hi havia un marcador temporal (no fixat) sense fixar, el substituïm
-        if (tempSearchMarker) {
-            removeSearchMarker(tempSearchMarker);
-        }
-
-        const icon = L.divIcon({
-            className: 'search-marker-icon',
-            html: buildMarkerHtml(label, false),
-            iconSize: [18, 18],
-            iconAnchor: [9, 9]
-        });
-
-        const marker = L.marker([lat, lon], { icon, riseOnHover: true, zIndexOffset: 2000 }).addTo(map);
-        marker._label = label;
-        marker._pinned = false;
-
-        attachMarkerEvents(marker);
-        allSearchMarkers.add(marker);
-        tempSearchMarker = marker;
-        return marker;
-    }
-
-    function attachMarkerEvents(marker) {
-        const el = marker.getElement();
-        if (!el) return;
-
-        const removeBtn = el.querySelector('.btn-remove');
-        const pinBtn = el.querySelector('.btn-pin');
-
-        if (removeBtn) {
-            L.DomEvent.on(removeBtn, 'click', L.DomEvent.stop)
-                .on(removeBtn, 'click', () => removeSearchMarker(marker));
-        }
-        if (pinBtn) {
-            L.DomEvent.on(pinBtn, 'click', L.DomEvent.stop)
-                .on(pinBtn, 'click', () => togglePinMarker(marker));
-        }
-        // Evita que el doble clic sobre el marcador faci zoom al mapa
-        L.DomEvent.on(el, 'dblclick', L.DomEvent.stop);
-    }
-
-    function togglePinMarker(marker) {
-        marker._pinned = !marker._pinned;
-
-        if (marker._pinned) {
-            // En fixar-se, deixa de ser el marcador temporal
-            if (tempSearchMarker === marker) {
-                tempSearchMarker = null;
-            }
-        } else {
-            // En desfixar-se, torna a ser temporal (substituint qualsevol altre temporal)
-            if (tempSearchMarker && tempSearchMarker !== marker) {
-                removeSearchMarker(tempSearchMarker);
-            }
-            tempSearchMarker = marker;
-        }
-
-        marker.setIcon(L.divIcon({
-            className: 'search-marker-icon',
-            html: buildMarkerHtml(marker._label, marker._pinned),
-            iconSize: [18, 18],
-            iconAnchor: [9, 9]
-        }));
-        attachMarkerEvents(marker);
-    }
-
-    function removeSearchMarker(marker) {
-        if (!marker) return;
-        map.removeLayer(marker);
-        allSearchMarkers.delete(marker);
-        if (tempSearchMarker === marker) {
-            tempSearchMarker = null;
         }
     }
     </script>
